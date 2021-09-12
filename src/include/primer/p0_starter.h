@@ -150,7 +150,7 @@ class RowMatrix : public Matrix<T> {
    * @throws OUT_OF_RANGE if either index is out of range
    */
   T GetElement(int i, int j) const override {
-    if (!(0 <= i && i < Matrix<T>::rows_ && 0 <= j && j <= Matrix<T>::cols_)) {
+    if (!(0 <= i && i < Matrix<T>::rows_ && 0 <= j && j < Matrix<T>::cols_)) {
       std::string error_msg =
           "RowMatrix::GetElement: index " + std::to_string(i) + ", " + std::to_string(j) + " out of range.";
       throw Exception(ExceptionType::OUT_OF_RANGE, error_msg);
@@ -169,7 +169,7 @@ class RowMatrix : public Matrix<T> {
    * @throws OUT_OF_RANGE if either index is out of range
    */
   void SetElement(int i, int j, T val) override {
-    if (!(0 <= i && i < Matrix<T>::rows_ && 0 <= j && j <= Matrix<T>::cols_)) {
+    if (!(0 <= i && i < Matrix<T>::rows_ && 0 <= j && j < Matrix<T>::cols_)) {
       std::string error_msg =
           "RowMatrix::SetElement: index " + std::to_string(i) + ", " + std::to_string(j) + " out of range.";
       throw Exception(ExceptionType::OUT_OF_RANGE, error_msg);
@@ -273,7 +273,7 @@ class RowMatrixOperations {
       for (int j = 0; j < col; j++) {
         int num = 0;
         for (int k = 0; k < same; k++) {
-          num += matrixA->GetElement(i, k) + matrixB->GetElement(k, j);
+          num += matrixA->GetElement(i, k) * matrixB->GetElement(k, j);
         }
         product->SetElement(i, j, num);
       }
