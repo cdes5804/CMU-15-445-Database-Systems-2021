@@ -16,35 +16,38 @@ namespace bustub {
 
 ParallelBufferPoolManager::ParallelBufferPoolManager(size_t num_instances, size_t pool_size, DiskManager *disk_manager,
                                                      LogManager *log_manager) {
-  // Allocate and create individual BufferPoolManagerInstances
+  for (uint32_t i = 0; i < num_instances; i++) {
+    managers_.push_back(
+        std::make_unique<BufferPoolManagerInstance>(pool_size, num_instances, i, disk_manager, log_manager));
+  }
 }
 
 // Update constructor to destruct all BufferPoolManagerInstances and deallocate any associated memory
 ParallelBufferPoolManager::~ParallelBufferPoolManager() = default;
 
-size_t ParallelBufferPoolManager::GetPoolSize() {
-  // Get size of all BufferPoolManagerInstances
-  return 0;
-}
+size_t ParallelBufferPoolManager::GetPoolSize() { return managers_.size(); }
 
 BufferPoolManager *ParallelBufferPoolManager::GetBufferPoolManager(page_id_t page_id) {
   // Get BufferPoolManager responsible for handling given page id. You can use this method in your other methods.
-  return nullptr;
+  return managers_[page_id % managers_.size()].get();
 }
 
 Page *ParallelBufferPoolManager::FetchPgImp(page_id_t page_id) {
   // Fetch page for page_id from responsible BufferPoolManagerInstance
-  return nullptr;
+  auto manager = GetBufferPoolManager(page_id);
+  return manager->FetchPage(page_id);
 }
 
 bool ParallelBufferPoolManager::UnpinPgImp(page_id_t page_id, bool is_dirty) {
   // Unpin page_id from responsible BufferPoolManagerInstance
-  return false;
+  auto manager = GetBufferPoolManager(page_id);
+  return manager->UnpinPage(page_id, is_dirty);
 }
 
 bool ParallelBufferPoolManager::FlushPgImp(page_id_t page_id) {
   // Flush page_id from responsible BufferPoolManagerInstance
-  return false;
+  auto manager = GetBufferPoolManager(page_id);
+  return manager->FlushPage(page_id);
 }
 
 Page *ParallelBufferPoolManager::NewPgImp(page_id_t *page_id) {
@@ -54,15 +57,27 @@ Page *ParallelBufferPoolManager::NewPgImp(page_id_t *page_id) {
   // starting index and return nullptr
   // 2.   Bump the starting index (mod number of instances) to start search at a different BPMI each time this function
   // is called
-  return nullptr;
+  std::scoped_lock lock(latch_);
+  Page *page = nullptr;
+  uint32_t tried = 0;
+  while (page == nullptr && tried != managers_.size()) {
+    page = managers_[start_index_]->NewPage(page_id);
+    start_index_ = (start_index_ + 1) % managers_.size();
+    tried++;
+  }
+  return page;
 }
 
 bool ParallelBufferPoolManager::DeletePgImp(page_id_t page_id) {
   // Delete page_id from responsible BufferPoolManagerInstance
-  return false;
+  auto manager = GetBufferPoolManager(page_id);
+  return manager->DeletePage(page_id);
 }
 
 void ParallelBufferPoolManager::FlushAllPgsImp() {
+  for (auto &manager : managers_) {
+    manager->FlushAllPages();
+  }
   // flush all pages from all BufferPoolManagerInstances
 }
 

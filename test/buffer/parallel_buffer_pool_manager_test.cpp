@@ -21,7 +21,7 @@ namespace bustub {
 
 // NOLINTNEXTLINE
 // Check whether pages containing terminal characters can be recovered
-TEST(ParallelBufferPoolManagerTest, DISABLED_BinaryDataTest) {
+TEST(ParallelBufferPoolManagerTest, BinaryDataTest) {
   const std::string db_name = "test.db";
   const size_t buffer_pool_size = 10;
   const size_t num_instances = 5;
@@ -58,7 +58,6 @@ TEST(ParallelBufferPoolManagerTest, DISABLED_BinaryDataTest) {
   for (size_t i = 1; i < buffer_pool_size * num_instances; ++i) {
     EXPECT_NE(nullptr, bpm->NewPage(&page_id_temp));
   }
-
   // Scenario: Once the buffer pool is full, we should not be able to create any new pages.
   for (size_t i = buffer_pool_size; i < buffer_pool_size * num_instances * 2; ++i) {
     EXPECT_EQ(nullptr, bpm->NewPage(&page_id_temp));
@@ -88,7 +87,7 @@ TEST(ParallelBufferPoolManagerTest, DISABLED_BinaryDataTest) {
 }
 
 // NOLINTNEXTLINE
-TEST(ParallelBufferPoolManagerTest, DISABLED_SampleTest) {
+TEST(ParallelBufferPoolManagerTest, SampleTest) {
   const std::string db_name = "test.db";
   const size_t buffer_pool_size = 10;
   const size_t num_instances = 5;
