@@ -1,9 +1,9 @@
 # CMU-Database-Systems-2021
 2021 CMU 15-445/645 (Database Systems) Projects
 
-This repository contains my work on MIT 6.824 Labs.
+This repository contains my work on CMU 15-445/645 Database Systems.
 
-Course website: [CMU 15-445/645 (FALL 2021) Database Systems](https://15445.courses.cs.cmu.edu/fall2021/)
+Course website: [CMU 15-445/645 (Fall 2021) Database Systems](https://15445.courses.cs.cmu.edu/fall2021/)
 
 ## Progress
 
