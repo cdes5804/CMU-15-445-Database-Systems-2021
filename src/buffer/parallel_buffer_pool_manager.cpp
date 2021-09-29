@@ -20,12 +20,13 @@ ParallelBufferPoolManager::ParallelBufferPoolManager(size_t num_instances, size_
     managers_.push_back(
         std::make_unique<BufferPoolManagerInstance>(pool_size, num_instances, i, disk_manager, log_manager));
   }
+  pool_size_ = pool_size;
 }
 
 // Update constructor to destruct all BufferPoolManagerInstances and deallocate any associated memory
 ParallelBufferPoolManager::~ParallelBufferPoolManager() = default;
 
-size_t ParallelBufferPoolManager::GetPoolSize() { return managers_.size(); }
+size_t ParallelBufferPoolManager::GetPoolSize() { return managers_.size() * pool_size_; }
 
 BufferPoolManager *ParallelBufferPoolManager::GetBufferPoolManager(page_id_t page_id) {
   // Get BufferPoolManager responsible for handling given page id. You can use this method in your other methods.
@@ -59,7 +60,7 @@ Page *ParallelBufferPoolManager::NewPgImp(page_id_t *page_id) {
   // is called
   std::scoped_lock lock(latch_);
   Page *page = nullptr;
-  uint32_t tried = 0;
+  size_t tried = 0;
   while (page == nullptr && tried != managers_.size()) {
     page = managers_[start_index_]->NewPage(page_id);
     start_index_ = (start_index_ + 1) % managers_.size();

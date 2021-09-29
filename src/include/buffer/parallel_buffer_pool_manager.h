@@ -93,6 +93,7 @@ class ParallelBufferPoolManager : public BufferPoolManager {
 
  private:
   std::mutex latch_;
+  size_t pool_size_;
   size_t start_index_ = 0;
   std::vector<std::unique_ptr<BufferPoolManagerInstance>> managers_;
 };
