@@ -101,7 +101,6 @@ Page *BufferPoolManagerInstance::NewPgImp(page_id_t *page_id) {
     page_table_.erase(iter);
   }
   page_table_[*page_id] = frame_id;
-  replacer_->Pin(frame_id);
 
   if (page->IsDirty()) {
     disk_manager_->WritePage(page->page_id_, page->GetData());
@@ -110,6 +109,7 @@ Page *BufferPoolManagerInstance::NewPgImp(page_id_t *page_id) {
   page->is_dirty_ = false;
   page->pin_count_ = 1;
   page->page_id_ = *page_id;
+  replacer_->Pin(frame_id);
 
   return page;
 }
@@ -132,7 +132,9 @@ Page *BufferPoolManagerInstance::FetchPgImp(page_id_t page_id) {
     frame_id = iter->second;
     Page *page = pages_ + frame_id;
     page->pin_count_++;
-    replacer_->Pin(frame_id);
+    if (page->pin_count_ == 1) {
+      replacer_->Pin(frame_id);
+    }
     return page;
   }
 
@@ -150,7 +152,6 @@ Page *BufferPoolManagerInstance::FetchPgImp(page_id_t page_id) {
     page_table_.erase(iter);
   }
   page_table_[page_id] = frame_id;
-  replacer_->Pin(frame_id);
 
   if (page->IsDirty()) {
     disk_manager_->WritePage(page->page_id_, page->GetData());
@@ -159,6 +160,7 @@ Page *BufferPoolManagerInstance::FetchPgImp(page_id_t page_id) {
   page->is_dirty_ = false;
   page->pin_count_ = 1;
   page->page_id_ = page_id;
+  replacer_->Pin(frame_id);
 
   return page;
 }

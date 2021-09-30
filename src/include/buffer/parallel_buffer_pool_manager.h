@@ -12,8 +12,8 @@
 
 #pragma once
 
+#include <atomic>
 #include <memory>
-#include <mutex>  // NOLINT
 #include <vector>
 
 #include "buffer/buffer_pool_manager_instance.h"
@@ -92,9 +92,8 @@ class ParallelBufferPoolManager : public BufferPoolManager {
   void FlushAllPgsImp() override;
 
  private:
-  std::mutex latch_;
   size_t pool_size_;
-  size_t start_index_ = 0;
+  std::atomic<size_t> start_index_{0};
   std::vector<std::unique_ptr<BufferPoolManagerInstance>> managers_;
 };
 }  // namespace bustub
