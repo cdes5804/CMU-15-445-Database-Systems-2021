@@ -189,7 +189,7 @@ bool BufferPoolManagerInstance::UnpinPgImp(page_id_t page_id, bool is_dirty) {
   if (page_table_.find(page_id) == page_table_.end()) {
     return false;
   }
-  
+
   frame_id_t frame_id = page_table_[page_id];
   Page *page = pages_ + frame_id;
   if (page->pin_count_ == 0) {
