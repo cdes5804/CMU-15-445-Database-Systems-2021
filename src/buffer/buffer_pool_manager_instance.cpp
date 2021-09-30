@@ -57,6 +57,7 @@ bool BufferPoolManagerInstance::FlushPgImp(page_id_t page_id) {
   Page *page = pages_ + frame_id;
   if (page->IsDirty()) {
     disk_manager_->WritePage(page_id, page->GetData());
+    page->is_dirty_ = false;
   }
   return true;
 }
@@ -67,6 +68,7 @@ void BufferPoolManagerInstance::FlushAllPgsImp() {
     Page *page = pages_ + frame_id;
     if (page->IsDirty()) {
       disk_manager_->WritePage(page_id, page->GetData());
+      page->is_dirty_ = false;
     }
   }
 }
@@ -78,15 +80,13 @@ Page *BufferPoolManagerInstance::NewPgImp(page_id_t *page_id) {
   // 3.   Update P's metadata, zero out memory and add P to the page table.
   // 4.   Set the page ID output parameter. Return a pointer to P.
   std::scoped_lock lock(latch_);
-  frame_id_t frame_id = -1;
+  frame_id_t frame_id = 0;
   if (!free_list_.empty()) {
     frame_id = free_list_.front();
     free_list_.pop_front();
   } else if (replacer_->Size() != 0) {
     replacer_->Victim(&frame_id);
-  }
-
-  if (frame_id == -1) {
+  } else {
     return nullptr;
   }
 
@@ -116,7 +116,7 @@ Page *BufferPoolManagerInstance::FetchPgImp(page_id_t page_id) {
   // 3.     Delete R from the page table and insert P.
   // 4.     Update P's metadata, read in the page content from disk, and then return a pointer to P.
   std::scoped_lock lock(latch_);
-  frame_id_t frame_id = -1;
+  frame_id_t frame_id = 0;
   if (page_table_.find(page_id) != page_table_.end()) {
     frame_id = page_table_[page_id];
     Page *page = pages_ + frame_id;
@@ -130,9 +130,7 @@ Page *BufferPoolManagerInstance::FetchPgImp(page_id_t page_id) {
     free_list_.pop_front();
   } else if (replacer_->Size() != 0) {
     replacer_->Victim(&frame_id);
-  }
-
-  if (frame_id == -1) {
+  } else {
     return nullptr;
   }
 
@@ -188,6 +186,10 @@ bool BufferPoolManagerInstance::DeletePgImp(page_id_t page_id) {
 
 bool BufferPoolManagerInstance::UnpinPgImp(page_id_t page_id, bool is_dirty) {
   std::scoped_lock lock(latch_);
+  if (page_table_.find(page_id) == page_table_.end()) {
+    return false;
+  }
+  
   frame_id_t frame_id = page_table_[page_id];
   Page *page = pages_ + frame_id;
   if (page->pin_count_ == 0) {
