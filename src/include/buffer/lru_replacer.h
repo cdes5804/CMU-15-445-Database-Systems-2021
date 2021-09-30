@@ -13,8 +13,8 @@
 #pragma once
 
 #include <list>
-#include <mutex>  // NOLINT
-#include <set>
+#include <mutex>         // NOLINT
+#include <shared_mutex>  // NOLINT
 #include <utility>
 #include <vector>
 
@@ -22,9 +22,6 @@
 #include "common/config.h"
 
 namespace bustub {
-
-using page_timestamp = std::pair<uint64_t, frame_id_t>;
-static constexpr uint64_t NOT_IN_REPLACER = 0;
 
 /**
  * LRUReplacer implements the Least Recently Used replacement policy.
@@ -52,10 +49,11 @@ class LRUReplacer : public Replacer {
 
  private:
   // TODO(student): implement me!
-  std::mutex mu_;
-  uint64_t timer_;
-  std::vector<uint64_t> timestamp_;
-  std::set<page_timestamp> unpinned_pages_;
+  std::shared_mutex r_mu_;
+  std::mutex w_mu_;
+  std::vector<bool> iter_valid_;
+  std::vector<std::list<frame_id_t>::const_iterator> iters_;
+  std::list<frame_id_t> unpinned_pages_;
 };
 
 }  // namespace bustub

@@ -49,11 +49,16 @@ BufferPoolManagerInstance::~BufferPoolManagerInstance() {
 
 bool BufferPoolManagerInstance::FlushPgImp(page_id_t page_id) {
   // Make sure you call DiskManager::WritePage!
-  std::scoped_lock lock(latch_);
-  if (page_table_.find(page_id) == page_table_.end()) {
+  if (page_id == INVALID_PAGE_ID) {
     return false;
   }
-  frame_id_t frame_id = page_table_[page_id];
+
+  std::scoped_lock lock(latch_);
+  auto iter = page_table_.find(page_id);
+  if (iter == page_table_.end()) {
+    return false;
+  }
+  frame_id_t frame_id = iter->second;
   Page *page = pages_ + frame_id;
   if (page->IsDirty()) {
     disk_manager_->WritePage(page_id, page->GetData());
@@ -91,19 +96,21 @@ Page *BufferPoolManagerInstance::NewPgImp(page_id_t *page_id) {
   }
 
   Page *page = pages_ + frame_id;
+  *page_id = AllocatePage();
+  if (auto iter = page_table_.find(page->page_id_); iter != page_table_.end()) {
+    page_table_.erase(iter);
+  }
+  page_table_[*page_id] = frame_id;
+  replacer_->Pin(frame_id);
+
   if (page->IsDirty()) {
     disk_manager_->WritePage(page->page_id_, page->GetData());
   }
-  page_table_.erase(page->page_id_);
-
-  *page_id = AllocatePage();
   page->ResetMemory();
   page->is_dirty_ = false;
   page->pin_count_ = 1;
   page->page_id_ = *page_id;
 
-  page_table_[*page_id] = frame_id;
-  replacer_->Pin(frame_id);
   return page;
 }
 
@@ -115,10 +122,14 @@ Page *BufferPoolManagerInstance::FetchPgImp(page_id_t page_id) {
   // 2.     If R is dirty, write it back to the disk.
   // 3.     Delete R from the page table and insert P.
   // 4.     Update P's metadata, read in the page content from disk, and then return a pointer to P.
+  if (page_id == INVALID_PAGE_ID) {
+    return nullptr;
+  }
+
   std::scoped_lock lock(latch_);
   frame_id_t frame_id = 0;
-  if (page_table_.find(page_id) != page_table_.end()) {
-    frame_id = page_table_[page_id];
+  if (auto iter = page_table_.find(page_id); iter != page_table_.end()) {
+    frame_id = iter->second;
     Page *page = pages_ + frame_id;
     page->pin_count_++;
     replacer_->Pin(frame_id);
@@ -135,18 +146,19 @@ Page *BufferPoolManagerInstance::FetchPgImp(page_id_t page_id) {
   }
 
   Page *page = pages_ + frame_id;
+  if (auto iter = page_table_.find(page->page_id_); iter != page_table_.end()) {
+    page_table_.erase(iter);
+  }
+  page_table_[page_id] = frame_id;
+  replacer_->Pin(frame_id);
+
   if (page->IsDirty()) {
     disk_manager_->WritePage(page->page_id_, page->GetData());
   }
-  page_table_.erase(page->page_id_);
-
   disk_manager_->ReadPage(page_id, page->GetData());
   page->is_dirty_ = false;
   page->pin_count_ = 1;
   page->page_id_ = page_id;
-
-  page_table_[page_id] = frame_id;
-  replacer_->Pin(frame_id);
 
   return page;
 }
@@ -157,40 +169,49 @@ bool BufferPoolManagerInstance::DeletePgImp(page_id_t page_id) {
   // 1.   If P does not exist, return true.
   // 2.   If P exists, but has a non-zero pin-count, return false. Someone is using the page.
   // 3.   Otherwise, P can be deleted. Remove P from the page table, reset its metadata and return it to the free list.
-  std::scoped_lock lock(latch_);
-  if (page_table_.find(page_id) == page_table_.end()) {
+  if (page_id == INVALID_PAGE_ID) {
     return true;
   }
 
-  frame_id_t frame_id = page_table_[page_id];
+  std::scoped_lock lock(latch_);
+  auto iter = page_table_.find(page_id);
+  if (iter == page_table_.end()) {
+    return true;
+  }
+
+  frame_id_t frame_id = iter->second;
   Page *page = pages_ + frame_id;
 
   if (page->pin_count_ != 0) {
     return false;
   }
 
-  page_table_.erase(page_id);
+  page_table_.erase(iter);
   free_list_.emplace_back(frame_id);
 
   if (page->IsDirty()) {
     disk_manager_->WritePage(page_id, page->GetData());
   }
-  DeallocatePage(page->page_id_);
-  page->ResetMemory();
   page->is_dirty_ = false;
   page->pin_count_ = 0;
   page->page_id_ = INVALID_PAGE_ID;
+  DeallocatePage(page->page_id_);
 
   return true;
 }
 
 bool BufferPoolManagerInstance::UnpinPgImp(page_id_t page_id, bool is_dirty) {
-  std::scoped_lock lock(latch_);
-  if (page_table_.find(page_id) == page_table_.end()) {
+  if (page_id == INVALID_PAGE_ID) {
     return false;
   }
 
-  frame_id_t frame_id = page_table_[page_id];
+  std::scoped_lock lock(latch_);
+  auto iter = page_table_.find(page_id);
+  if (iter == page_table_.end()) {
+    return false;
+  }
+
+  frame_id_t frame_id = iter->second;
   Page *page = pages_ + frame_id;
   if (page->pin_count_ == 0) {
     return false;
