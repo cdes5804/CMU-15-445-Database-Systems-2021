@@ -6,7 +6,7 @@
 //
 // Identification: src/include/storage/index/extendible_hash_table_index.h
 //
-// Copyright (c) 2015-2019, Carnegie Mellon University Database Group
+// Copyright (c) 2015-2021, Carnegie Mellon University Database Group
 //
 //===----------------------------------------------------------------------===//
 
@@ -27,7 +27,7 @@ namespace bustub {
 template <typename KeyType, typename ValueType, typename KeyComparator>
 class ExtendibleHashTableIndex : public Index {
  public:
-  ExtendibleHashTableIndex(IndexMetadata *metadata, BufferPoolManager *buffer_pool_manager, size_t num_buckets,
+  ExtendibleHashTableIndex(IndexMetadata *metadata, BufferPoolManager *buffer_pool_manager,
                            const HashFunction<KeyType> &hash_fn);
 
   ~ExtendibleHashTableIndex() override = default;
