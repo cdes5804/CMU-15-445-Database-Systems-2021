@@ -60,10 +60,8 @@ bool BufferPoolManagerInstance::FlushPgImp(page_id_t page_id) {
   }
   frame_id_t frame_id = iter->second;
   Page *page = pages_ + frame_id;
-  if (page->IsDirty()) {
-    disk_manager_->WritePage(page_id, page->GetData());
-    page->is_dirty_ = false;
-  }
+  disk_manager_->WritePage(page_id, page->GetData());
+  page->is_dirty_ = false;
   return true;
 }
 
@@ -71,10 +69,8 @@ void BufferPoolManagerInstance::FlushAllPgsImp() {
   std::scoped_lock lock(latch_);
   for (auto [page_id, frame_id] : page_table_) {
     Page *page = pages_ + frame_id;
-    if (page->IsDirty()) {
-      disk_manager_->WritePage(page_id, page->GetData());
-      page->is_dirty_ = false;
-    }
+    disk_manager_->WritePage(page_id, page->GetData());
+    page->is_dirty_ = false;
   }
 }
 
@@ -87,8 +83,8 @@ Page *BufferPoolManagerInstance::NewPgImp(page_id_t *page_id) {
   std::scoped_lock lock(latch_);
   frame_id_t frame_id = 0;
   if (!free_list_.empty()) {
-    frame_id = free_list_.front();
-    free_list_.pop_front();
+    frame_id = free_list_.back();
+    free_list_.pop_back();
   } else if (replacer_->Size() != 0) {
     replacer_->Victim(&frame_id);
   } else {
@@ -139,8 +135,8 @@ Page *BufferPoolManagerInstance::FetchPgImp(page_id_t page_id) {
   }
 
   if (!free_list_.empty()) {
-    frame_id = free_list_.front();
-    free_list_.pop_front();
+    frame_id = free_list_.back();
+    free_list_.pop_back();
   } else if (replacer_->Size() != 0) {
     replacer_->Victim(&frame_id);
   } else {
