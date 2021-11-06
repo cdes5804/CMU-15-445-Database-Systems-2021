@@ -144,7 +144,7 @@ class ExtendibleHashTable {
    * @param value the value to insert
    * @return whether or not the insertion was successful
    */
-  bool SplitInsert(Transaction *transaction, const KeyType &key, const ValueType &value);
+  void Split(HashTableDirectoryPage *dir_page, const uint32_t &bucket_index);
 
   /**
    * Optionally merges an empty bucket into it's pair.  This is called by Remove,
@@ -159,7 +159,7 @@ class ExtendibleHashTable {
    * @param key the key that was removed
    * @param value the value that was removed
    */
-  void Merge(Transaction *transaction, const KeyType &key, const ValueType &value);
+  bool Merge(HashTableDirectoryPage *dir_page, const uint32_t &bucket_index);
 
   // member variables
   page_id_t directory_page_id_;

@@ -24,31 +24,79 @@ lsn_t HashTableDirectoryPage::GetLSN() const { return lsn_; }
 
 void HashTableDirectoryPage::SetLSN(lsn_t lsn) { lsn_ = lsn; }
 
-uint32_t HashTableDirectoryPage::GetGlobalDepth() { return global_depth_; }
+uint32_t HashTableDirectoryPage::GetGlobalDepth() const { return global_depth_; }
 
-uint32_t HashTableDirectoryPage::GetGlobalDepthMask() { return 0; }
+uint32_t HashTableDirectoryPage::GetGlobalDepthMask() const {
+  uint32_t mask = 0;
+  for (uint32_t i = 0; i < global_depth_; i++) {
+    mask |= (1U << i);
+  }
+  return mask;
+}
 
-void HashTableDirectoryPage::IncrGlobalDepth() {}
+uint32_t HashTableDirectoryPage::GetLocalDepthMask(uint32_t bucket_idx) const {
+  auto local_depth = local_depths_[bucket_idx];
+  uint32_t mask = 0;
+  for (uint32_t i = 0; i < local_depth; i++) {
+    mask |= (1U << i);
+  }
+  return mask;
+}
 
-void HashTableDirectoryPage::DecrGlobalDepth() { global_depth_--; }
+void HashTableDirectoryPage::IncrGlobalDepth() { global_depth_++; }
 
-page_id_t HashTableDirectoryPage::GetBucketPageId(uint32_t bucket_idx) { return 0; }
+void HashTableDirectoryPage::DecrGlobalDepth() {
+  if (global_depth_ > 1) {
+    global_depth_--;
+  }
+}
 
-void HashTableDirectoryPage::SetBucketPageId(uint32_t bucket_idx, page_id_t bucket_page_id) {}
+page_id_t HashTableDirectoryPage::GetBucketPageId(uint32_t bucket_idx) const { return bucket_page_ids_[bucket_idx]; }
 
-uint32_t HashTableDirectoryPage::Size() { return 0; }
+void HashTableDirectoryPage::SetBucketPageId(uint32_t bucket_idx, page_id_t bucket_page_id) {
+  bucket_page_ids_[bucket_idx] = bucket_page_id;
+}
 
-bool HashTableDirectoryPage::CanShrink() { return false; }
+uint32_t HashTableDirectoryPage::GetSplitImageIndex(uint32_t bucket_idx) const {
+  auto high_bit = GetLocalHighBit(bucket_idx);
+  return bucket_idx ^ high_bit;
+}
 
-uint32_t HashTableDirectoryPage::GetLocalDepth(uint32_t bucket_idx) { return 0; }
+uint32_t HashTableDirectoryPage::Size() const { return 1U << global_depth_; }
 
-void HashTableDirectoryPage::SetLocalDepth(uint32_t bucket_idx, uint8_t local_depth) {}
+bool HashTableDirectoryPage::CanShrink() const {
+  if (global_depth_ == 1) {
+    return false;
+  }
 
-void HashTableDirectoryPage::IncrLocalDepth(uint32_t bucket_idx) {}
+  bool ok = true;
+  uint32_t current_size = Size();
+  for (uint32_t i = 0; i < current_size; i++) {
+    if (local_depths_[i] == global_depth_) {
+      ok = false;
+      break;
+    }
+  }
+  return ok;
+}
 
-void HashTableDirectoryPage::DecrLocalDepth(uint32_t bucket_idx) {}
+uint32_t HashTableDirectoryPage::GetLocalDepth(uint32_t bucket_idx) const { return local_depths_[bucket_idx]; }
 
-uint32_t HashTableDirectoryPage::GetLocalHighBit(uint32_t bucket_idx) { return 0; }
+void HashTableDirectoryPage::SetLocalDepth(uint32_t bucket_idx, uint8_t local_depth) {
+  local_depths_[bucket_idx] = local_depth;
+}
+
+void HashTableDirectoryPage::IncrLocalDepth(uint32_t bucket_idx) { local_depths_[bucket_idx]++; }
+
+void HashTableDirectoryPage::DecrLocalDepth(uint32_t bucket_idx) {
+  if (local_depths_[bucket_idx] > 1) {
+    local_depths_[bucket_idx]--;
+  }
+}
+
+uint32_t HashTableDirectoryPage::GetLocalHighBit(uint32_t bucket_idx) const {
+  return 1U << (local_depths_[bucket_idx] - 1);
+}
 
 /**
  * VerifyIntegrity - Use this for debugging but **DO NOT CHANGE**

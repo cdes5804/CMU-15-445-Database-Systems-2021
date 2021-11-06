@@ -34,6 +34,8 @@ namespace bustub {
  *  readable_ arrays. More information is in storage/page/hash_table_page_defs.h.
  *
  */
+constexpr uint8_t CELL_SIZE = 8 * sizeof(char);
+
 template <typename KeyType, typename ValueType, typename KeyComparator>
 class HashTableBucketPage {
  public:
@@ -120,29 +122,50 @@ class HashTableBucketPage {
   /**
    * @return the number of readable elements, i.e. current size
    */
-  uint32_t NumReadable();
+  uint32_t NumReadable() const;
 
   /**
    * @return whether the bucket is full
    */
-  bool IsFull();
+  bool IsFull() const;
 
   /**
    * @return whether the bucket is empty
    */
-  bool IsEmpty();
+  bool IsEmpty() const;
 
   /**
    * Prints the bucket's occupancy information
    */
-  void PrintBucket();
+  void PrintBucket() const;
+
+  /**
+   * @return the index of the first cell that is not occupied in the array
+   */
+  uint32_t NonOccupiedIndex() const;
+
+  /**
+   * @return the index of the first element with the key considered no less than the given one in the array
+   */
+  int32_t BinarySearch(KeyType key, KeyComparator cmp) const;
+
+  /**
+   * Move every elements towards the given available index to make room for the new element
+   * @return the index that the new element can use
+   */
+  uint32_t ShiftBucketUntilKeyCanInsert(uint32_t available_index, int8_t shift_direction, KeyType key,
+                                        KeyComparator cmp);
+
+  /**
+   * Insert the given key-value pair at the index
+   */
+  void InsertAt(uint32_t index, KeyType key, ValueType value);
 
  private:
   //  For more on BUCKET_ARRAY_SIZE see storage/page/hash_table_page_defs.h
-  char occupied_[(BUCKET_ARRAY_SIZE - 1) / 8 + 1] = {};
+  char occupied_[(BUCKET_ARRAY_SIZE - 1) / 8 + 1];
   // 0 if tombstone/brand new (never occupied), 1 otherwise.
-  char readable_[(BUCKET_ARRAY_SIZE - 1) / 8 + 1] = {};
-  size_t num_readable_ = 0;
+  char readable_[(BUCKET_ARRAY_SIZE - 1) / 8 + 1];
   MappingType array_[0];
 };
 
