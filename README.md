@@ -15,7 +15,7 @@ Gradescope entry code for non-CMU students: **4PR8G5**
 
 * [x] Project #1: [Buffer Pool Manager](https://15445.courses.cs.cmu.edu/fall2021/project1/)
 
-* [ ] Project #2: [Hash Index](https://15445.courses.cs.cmu.edu/fall2021/project2/)
+* [x] Project #2: [Hash Index](https://15445.courses.cs.cmu.edu/fall2021/project2/)
 
 * [ ] Project #3: Query Execution
 

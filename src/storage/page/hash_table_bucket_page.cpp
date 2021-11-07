@@ -40,13 +40,20 @@ bool HASH_TABLE_BUCKET_TYPE::Insert(KeyType key, ValueType value, KeyComparator 
     return false;
   }
   const uint32_t index = BinarySearch(key, cmp);
+  bool found_duplicate = false;
   bool through_different_key = false;
   uint32_t seek_right_index = index;
   while (seek_right_index < BUCKET_ARRAY_SIZE && IsReadable(seek_right_index)) {
     if (cmp(key, array_[seek_right_index].first) != 0) {
       through_different_key = true;
+    } else if (array_[seek_right_index].second == value) {
+      found_duplicate = true;
+      break;
     }
     seek_right_index++;
+  }
+  if (found_duplicate) {
+    return false;
   }
   if (seek_right_index < BUCKET_ARRAY_SIZE && !through_different_key) {
     InsertAt(seek_right_index, key, value);

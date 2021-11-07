@@ -139,12 +139,14 @@ class ExtendibleHashTable {
   /**
    * Performs insertion with an optional bucket splitting.
    *
-   * @param transaction a pointer to the current transaction
    * @param key the key to insert
    * @param value the value to insert
    * @return whether or not the insertion was successful
    */
-  void Split(HashTableDirectoryPage *dir_page, const uint32_t &bucket_index);
+  bool SplitInsert(KeyType key, ValueType value);
+
+  void Split(HashTableDirectoryPage *dir_page, const uint32_t &bucket_index, const page_id_t &bucket_page_id,
+             HASH_TABLE_BUCKET_TYPE *bucket_page);
 
   /**
    * Optionally merges an empty bucket into it's pair.  This is called by Remove,
@@ -155,11 +157,9 @@ class ExtendibleHashTable {
    * 2. The bucket has local depth 0.
    * 3. The bucket's local depth doesn't match its split image's local depth.
    *
-   * @param transaction a pointer to the current transaction
    * @param key the key that was removed
-   * @param value the value that was removed
    */
-  bool Merge(HashTableDirectoryPage *dir_page, const uint32_t &bucket_index);
+  void Merge(KeyType key);
 
   // member variables
   page_id_t directory_page_id_;
