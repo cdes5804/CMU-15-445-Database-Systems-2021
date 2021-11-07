@@ -267,28 +267,6 @@ bool HASH_TABLE_TYPE::Remove(Transaction *transaction, const KeyType &key, const
   table_latch_.RUnlock();
   Merge(key);
   return true;
-
-  /* bool has_merged = false;
-  auto bucket_page_index = KeyToDirectoryIndex(key, dir_page);
-
-  page->RLatch();
-  while (bucket_page->IsEmpty()) {
-    page->RUnlatch();
-    if (!Merge(dir_page, bucket_page_index)) {
-      page->RLatch();
-      break;
-    }
-    has_merged = true;
-    buffer_pool_manager_->UnpinPage(bucket_page_id, true, nullptr);
-    bucket_page_index = KeyToDirectoryIndex(key, dir_page);
-    bucket_page_id = KeyToPageId(key, dir_page);
-    bucket_page = FetchBucketPage(bucket_page_id);
-    page = reinterpret_cast<Page *>(bucket_page);
-    page->RLatch();
-  }
-  page->RUnlatch();
-
-  return true; */
 }
 
 /*****************************************************************************
