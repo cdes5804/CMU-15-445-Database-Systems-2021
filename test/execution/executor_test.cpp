@@ -418,7 +418,7 @@ TEST_F(ExecutorTest, SimpleNestedLoopJoinTest) {
 }
 
 // SELECT test_4.colA, test_4.colB, test_6.colA, test_6.colB FROM test_4 JOIN test_6 ON test_4.colA = test_6.colA;
-TEST_F(ExecutorTest, DISABLED_SimpleHashJoinTest) {
+TEST_F(ExecutorTest, SimpleHashJoinTest) {
   // Construct sequential scan of table test_4
   const Schema *out_schema1{};
   std::unique_ptr<AbstractPlanNode> scan_plan1{};
