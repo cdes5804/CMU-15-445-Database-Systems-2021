@@ -13,8 +13,11 @@
 #pragma once
 
 #include <memory>
+#include <unordered_map>
 #include <utility>
+#include <vector>
 
+#include "common/util/hash_util.h"
 #include "execution/executors/abstract_executor.h"
 #include "execution/plans/distinct_plan.h"
 
@@ -53,5 +56,8 @@ class DistinctExecutor : public AbstractExecutor {
   const DistinctPlanNode *plan_;
   /** The child executor from which tuples are obtained */
   std::unique_ptr<AbstractExecutor> child_executor_;
+  std::unordered_map<hash_t, std::vector<std::vector<Value>>> ht_{};
+  std::vector<Column> output_columns_;
+  bool IsDuplicate(const std::vector<Value> &values, const hash_t tuple_hash) const;
 };
 }  // namespace bustub

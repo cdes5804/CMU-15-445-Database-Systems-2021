@@ -618,7 +618,7 @@ TEST_F(ExecutorTest, SimpleLimitTest) {
 }
 
 // SELECT DISTINCT colC FROM test_7
-TEST_F(ExecutorTest, DISABLED_SimpleDistinctTest) {
+TEST_F(ExecutorTest, SimpleDistinctTest) {
   auto *table_info = GetExecutorContext()->GetCatalog()->GetTable("test_7");
   auto &schema = table_info->schema_;
 
