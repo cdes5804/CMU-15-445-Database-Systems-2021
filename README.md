@@ -5,6 +5,8 @@ This repository contains my work on CMU 15-445/645 Database Systems.
 
 Course website: [CMU 15-445/645 (Fall 2021) Database Systems](https://15445.courses.cs.cmu.edu/fall2021/)
 
+Official project repo: [BusTub](https://github.com/cmu-db/bustub)
+
 Gradescope entry code for non-CMU students: **4PR8G5**
 
 ## Progress
@@ -17,6 +19,6 @@ Gradescope entry code for non-CMU students: **4PR8G5**
 
 * [x] Project #2: [Hash Index](https://15445.courses.cs.cmu.edu/fall2021/project2/)
 
-* [ ] Project #3: [Query Execution](https://15445.courses.cs.cmu.edu/fall2021/project3/)
+* [x] Project #3: [Query Execution](https://15445.courses.cs.cmu.edu/fall2021/project3/)
 
-* [ ] Project #4: Concurrency Control
+* [ ] Project #4: [Concurrency Control](https://15445.courses.cs.cmu.edu/fall2021/project4/)
