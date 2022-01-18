@@ -52,7 +52,7 @@ bool DistinctExecutor::IsDuplicate(const std::vector<Value> &values, const hash_
     return false;
   }
   const std::vector<std::vector<Value>> &tuples_raw_values = iter->second;
-  for (const auto& raw_values : tuples_raw_values) {
+  for (const auto &raw_values : tuples_raw_values) {
     bool is_same = true;
     for (size_t i = 0; i < values.size(); i++) {
       if (values[i].CompareNotEquals(raw_values[i]) == CmpBool::CmpTrue) {
