@@ -37,13 +37,18 @@ void HashJoinExecutor::Init() {
     ht_[hash_value].emplace_back(left_tuple);
   }
 
-  end_iter_ = ht_.begin()->second.end();
-  tuple_iter_ = end_iter_;  // set the tuple iterator to an invalid iterator for initialization
-
-  output_columns_ = plan_->OutputSchema()->GetColumns();
+  if (!ht_.empty()) {
+    end_iter_ = ht_.begin()->second.end();
+    tuple_iter_ = end_iter_;  // set the tuple iterator to an invalid iterator for initialization
+    output_columns_ = plan_->OutputSchema()->GetColumns();
+  }
 }
 
 bool HashJoinExecutor::Next(Tuple *tuple, RID *rid) {
+  if (ht_.empty()) {
+    return false;
+  }
+
   bool found_target = false;
 
   while (!found_target) {
