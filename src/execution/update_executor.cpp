@@ -23,7 +23,6 @@ void UpdateExecutor::Init() {
   const auto table_oid = plan_->TableOid();
   table_info_ = exec_ctx_->GetCatalog()->GetTable(table_oid);
   table_indexes_ = exec_ctx_->GetCatalog()->GetTableIndexes(table_info_->name_);
-  transaction_ = exec_ctx_->GetTransaction();
 
   if (child_executor_) {
     child_executor_->Init();
@@ -38,7 +37,7 @@ bool UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) {
   }
 
   Tuple updated_tuple = GenerateUpdatedTuple(tuple_to_update);
-  if (!table_info_->table_->UpdateTuple(updated_tuple, tuple_to_update_rid, transaction_)) {
+  if (!table_info_->table_->UpdateTuple(updated_tuple, tuple_to_update_rid, exec_ctx_->GetTransaction())) {
     return false;
   }
 
@@ -46,10 +45,10 @@ bool UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) {
     auto &index = index_info->index_;
     Tuple old_key_tuple =
         tuple_to_update.KeyFromTuple(table_info_->schema_, index_info->key_schema_, index->GetKeyAttrs());
-    index->DeleteEntry(old_key_tuple, tuple_to_update_rid, transaction_);
+    index->DeleteEntry(old_key_tuple, tuple_to_update_rid, exec_ctx_->GetTransaction());
     Tuple new_key_tuple =
         updated_tuple.KeyFromTuple(table_info_->schema_, index_info->key_schema_, index->GetKeyAttrs());
-    index->InsertEntry(new_key_tuple, tuple_to_update_rid, transaction_);
+    index->InsertEntry(new_key_tuple, tuple_to_update_rid, exec_ctx_->GetTransaction());
   }
 
   return true;

@@ -63,7 +63,6 @@ class InsertExecutor : public AbstractExecutor {
   const InsertPlanNode *plan_;
   const TableInfo *table_info_;
   std::vector<IndexInfo *> table_indexes_;
-  Transaction *transaction_;
   size_t index_for_tuple_to_insert_ = 0;
 };
 

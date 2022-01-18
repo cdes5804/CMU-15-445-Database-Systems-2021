@@ -60,11 +60,6 @@ class NestedLoopJoinExecutor : public AbstractExecutor {
   std::unique_ptr<AbstractExecutor> right_executor_;
   Tuple left_tuple_{};
   RID left_rid_;
-  const Schema *left_schema_;
-  const Schema *right_schema_;
-  const Schema *output_schema_;
-  std::vector<Column> output_columns_;
-  const AbstractExpression *predicate_;
   bool Advance(Tuple *left_tuple, RID *left_rid, Tuple *right_tuple, RID *right_rid);
 };
 

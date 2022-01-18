@@ -52,7 +52,5 @@ class SeqScanExecutor : public AbstractExecutor {
   const SeqScanPlanNode *plan_;
   TableInfo *table_info_;
   TableIterator table_iter_;
-  const AbstractExpression *predicate_;
-  std::vector<Column> output_columns_;
 };
 }  // namespace bustub

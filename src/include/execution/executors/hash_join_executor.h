@@ -62,7 +62,6 @@ class HashJoinExecutor : public AbstractExecutor {
   std::unordered_map<hash_t, std::vector<Tuple>> ht_{};
   std::vector<Tuple>::iterator tuple_iter_;
   std::vector<Tuple>::iterator end_iter_;
-  std::vector<Column> output_columns_;
   Tuple right_tuple_;
   RID right_rid_;
   Value right_value_;

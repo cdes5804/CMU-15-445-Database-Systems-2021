@@ -25,11 +25,6 @@ NestedLoopJoinExecutor::NestedLoopJoinExecutor(ExecutorContext *exec_ctx, const 
 void NestedLoopJoinExecutor::Init() {
   left_executor_->Init();
   right_executor_->Init();
-  predicate_ = plan_->Predicate();
-  left_schema_ = left_executor_->GetOutputSchema();
-  right_schema_ = right_executor_->GetOutputSchema();
-  output_schema_ = plan_->OutputSchema();
-  output_columns_ = plan_->OutputSchema()->GetColumns();
 }
 
 bool NestedLoopJoinExecutor::Next(Tuple *tuple, RID *rid) {
@@ -38,8 +33,10 @@ bool NestedLoopJoinExecutor::Next(Tuple *tuple, RID *rid) {
   bool should_join = false;
 
   while (Advance(&left_tuple_, &left_rid_, &right_tuple, &right_rid) &&
-         !(should_join =
-               predicate_->EvaluateJoin(&left_tuple_, left_schema_, &right_tuple, right_schema_).GetAs<bool>())) {
+         !(should_join = plan_->Predicate()
+                             ->EvaluateJoin(&left_tuple_, left_executor_->GetOutputSchema(), &right_tuple,
+                                            right_executor_->GetOutputSchema())
+                             .GetAs<bool>())) {
   }
 
   if (!should_join) {
@@ -47,11 +44,12 @@ bool NestedLoopJoinExecutor::Next(Tuple *tuple, RID *rid) {
   }
 
   std::vector<Value> values;
-  for (auto &column : output_columns_) {
-    values.emplace_back(column.GetExpr()->EvaluateJoin(&left_tuple_, left_schema_, &right_tuple, right_schema_));
+  for (auto &column : plan_->OutputSchema()->GetColumns()) {
+    values.emplace_back(column.GetExpr()->EvaluateJoin(&left_tuple_, left_executor_->GetOutputSchema(), &right_tuple,
+                                                       right_executor_->GetOutputSchema()));
   }
 
-  *tuple = Tuple(values, output_schema_);
+  *tuple = Tuple(values, plan_->OutputSchema());
   return true;
 }
 

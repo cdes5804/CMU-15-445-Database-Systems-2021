@@ -24,7 +24,6 @@ void InsertExecutor::Init() {
   const auto table_oid = plan_->TableOid();
   table_info_ = exec_ctx_->GetCatalog()->GetTable(table_oid);
   table_indexes_ = exec_ctx_->GetCatalog()->GetTableIndexes(table_info_->name_);
-  transaction_ = exec_ctx_->GetTransaction();
 
   if (child_executor_) {
     child_executor_->Init();
@@ -47,14 +46,14 @@ bool InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) {
     }
   }
 
-  if (!table_info_->table_->InsertTuple(tuple_to_insert, &tuple_to_insert_rid, transaction_)) {
+  if (!table_info_->table_->InsertTuple(tuple_to_insert, &tuple_to_insert_rid, exec_ctx_->GetTransaction())) {
     return false;
   }
 
   for (const auto &index_info : table_indexes_) {
     auto &index = index_info->index_;
     Tuple key_tuple = tuple_to_insert.KeyFromTuple(table_info_->schema_, index_info->key_schema_, index->GetKeyAttrs());
-    index->InsertEntry(key_tuple, tuple_to_insert_rid, transaction_);
+    index->InsertEntry(key_tuple, tuple_to_insert_rid, exec_ctx_->GetTransaction());
   }
 
   return true;

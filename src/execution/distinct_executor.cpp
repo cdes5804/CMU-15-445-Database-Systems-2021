@@ -19,10 +19,7 @@ DistinctExecutor::DistinctExecutor(ExecutorContext *exec_ctx, const DistinctPlan
                                    std::unique_ptr<AbstractExecutor> &&child_executor)
     : AbstractExecutor(exec_ctx), plan_(plan), child_executor_(std::move(child_executor)) {}
 
-void DistinctExecutor::Init() {
-  child_executor_->Init();
-  output_columns_ = plan_->OutputSchema()->GetColumns();
-}
+void DistinctExecutor::Init() { child_executor_->Init(); }
 
 bool DistinctExecutor::Next(Tuple *tuple, RID *rid) {
   Tuple input_tuple;
@@ -31,7 +28,7 @@ bool DistinctExecutor::Next(Tuple *tuple, RID *rid) {
   while (child_executor_->Next(&input_tuple, &tuple_rid)) {
     std::vector<Value> values;
     hash_t tuple_hash = 0;
-    for (auto &column : output_columns_) {
+    for (auto &column : plan_->OutputSchema()->GetColumns()) {
       Value value = input_tuple.GetValue(plan_->GetChildPlan()->OutputSchema(),
                                          plan_->GetChildPlan()->OutputSchema()->GetColIdx(column.GetName()));
       tuple_hash = HashUtil::CombineHashes(tuple_hash, HashUtil::HashValue(&value));

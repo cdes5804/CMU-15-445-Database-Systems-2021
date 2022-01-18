@@ -40,7 +40,6 @@ void HashJoinExecutor::Init() {
   if (!ht_.empty()) {
     end_iter_ = ht_.begin()->second.end();
     tuple_iter_ = end_iter_;  // set the tuple iterator to an invalid iterator for initialization
-    output_columns_ = plan_->OutputSchema()->GetColumns();
   }
 }
 
@@ -76,7 +75,7 @@ bool HashJoinExecutor::Next(Tuple *tuple, RID *rid) {
   }
 
   std::vector<Value> values;
-  for (auto &column : output_columns_) {
+  for (auto &column : plan_->OutputSchema()->GetColumns()) {
     values.emplace_back(column.GetExpr()->EvaluateJoin(&(*tuple_iter_), plan_->GetLeftPlan()->OutputSchema(),
                                                        &right_tuple_, plan_->GetRightPlan()->OutputSchema()));
   }
