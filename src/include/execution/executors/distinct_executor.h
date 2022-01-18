@@ -58,6 +58,6 @@ class DistinctExecutor : public AbstractExecutor {
   std::unique_ptr<AbstractExecutor> child_executor_;
   std::unordered_map<hash_t, std::vector<std::vector<Value>>> ht_{};
   std::vector<Column> output_columns_;
-  bool IsDuplicate(const std::vector<Value> &values, const hash_t tuple_hash) const;
+  bool IsDuplicate(const std::vector<Value> &values, hash_t tuple_hash) const;
 };
 }  // namespace bustub
