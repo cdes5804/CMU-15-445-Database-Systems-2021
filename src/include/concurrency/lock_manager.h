@@ -14,9 +14,10 @@
 
 #include <algorithm>
 #include <condition_variable>  // NOLINT
-#include <list>
+#include <deque>
 #include <memory>
 #include <mutex>  // NOLINT
+#include <set>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -37,20 +38,122 @@ class LockManager {
 
   class LockRequest {
    public:
-    LockRequest(txn_id_t txn_id, LockMode lock_mode) : txn_id_(txn_id), lock_mode_(lock_mode), granted_(false) {}
+    LockRequest(txn_id_t txn_id, LockMode lock_mode) : txn_id_(txn_id), lock_mode_(lock_mode) {}
 
     txn_id_t txn_id_;
     LockMode lock_mode_;
-    bool granted_;
   };
 
   class LockRequestQueue {
    public:
-    std::list<LockRequest> request_queue_;
+    std::mutex queue_latch_;
+    std::set<txn_id_t> shared_lock_holders_;
+    std::deque<LockRequest> request_queue_;
+    std::vector<txn_id_t> aborted_transaction_ids_;
     // for notifying blocked transactions on this rid
     std::condition_variable cv_;
     // txn_id of an upgrading transaction (if any)
     txn_id_t upgrading_ = INVALID_TXN_ID;
+    // txn_id of the tranaction holding the exclusive lock
+    txn_id_t exclusive_lock_holder_id_ = INVALID_TXN_ID;
+
+    bool IsLockGranted(txn_id_t txn_id) const {
+      return upgrading_ != txn_id &&
+             (shared_lock_holders_.find(txn_id) != shared_lock_holders_.end() || exclusive_lock_holder_id_ == txn_id);
+    }
+
+    void SubmitLockRequest(Transaction *txn, LockMode lock_mode) {
+      if (txn->GetState() == TransactionState::ABORTED) {
+        return;
+      }
+
+      while (!request_queue_.empty()) {
+        if (txn->GetTransactionId() < request_queue_.back().txn_id_) {
+          aborted_transaction_ids_.emplace_back(request_queue_.back().txn_id_);
+          request_queue_.pop_back();
+        }
+      }
+      request_queue_.emplace_back(txn->GetTransactionId(), lock_mode);
+      ProcessQueue();
+    }
+
+    bool SubmitUpgradeRequest(Transaction *txn) {
+      if (txn->GetState() == TransactionState::ABORTED) {
+        return false;
+      }
+
+      if (upgrading_ != INVALID_TXN_ID && upgrading_ != txn->GetTransactionId()) {
+        return false;
+      }
+      upgrading_ = txn->GetTransactionId();
+      ProcessQueue();
+      return true;
+    }
+
+    void Unlock(txn_id_t txn_id) {
+      if (auto iter = shared_lock_holders_.find(txn_id); iter != shared_lock_holders_.end()) {
+        shared_lock_holders_.erase(iter);
+      }
+      if (exclusive_lock_holder_id_ == txn_id) {
+        exclusive_lock_holder_id_ = INVALID_TXN_ID;
+      }
+      ProcessQueue();
+    }
+
+    void ProcessQueue() {
+      // check if there is a pending upgrade request, which has precedence over other requests
+      if (upgrading_ != INVALID_TXN_ID) {
+        if (upgrading_ <= GetSharedLockOldestTransactionId()) {
+          for (auto shared_lock_holders : shared_lock_holders_) {
+            if (shared_lock_holders != upgrading_) {
+              aborted_transaction_ids_.emplace_back(shared_lock_holders);
+            }
+          }
+          shared_lock_holders_.clear();
+          exclusive_lock_holder_id_ = upgrading_;
+          upgrading_ = INVALID_TXN_ID;
+        }
+        return;
+      }
+
+      while (!request_queue_.empty()) {
+        const LockRequest &request = request_queue_.front();
+        if (request.lock_mode_ == LockMode::SHARED) {
+          if (exclusive_lock_holder_id_ == INVALID_TXN_ID || request.txn_id_ < exclusive_lock_holder_id_) {
+            if (exclusive_lock_holder_id_ != INVALID_TXN_ID) {
+              aborted_transaction_ids_.emplace_back(exclusive_lock_holder_id_);
+              exclusive_lock_holder_id_ = INVALID_TXN_ID;
+            }
+            shared_lock_holders_.insert(request.txn_id_);
+            request_queue_.pop_front();
+          } else {
+            break;
+          }
+        } else if (request.lock_mode_ == LockMode::EXCLUSIVE) {
+          if (exclusive_lock_holder_id_ != INVALID_TXN_ID && request.txn_id_ < exclusive_lock_holder_id_) {
+            aborted_transaction_ids_.emplace_back(exclusive_lock_holder_id_);
+            exclusive_lock_holder_id_ = request.txn_id_;
+            request_queue_.pop_front();
+          } else if (auto oldest_id = GetSharedLockOldestTransactionId();
+                     exclusive_lock_holder_id_ == INVALID_TXN_ID &&
+                     (oldest_id == INVALID_TXN_ID || request.txn_id_ < oldest_id)) {
+            for (auto shared_lock_holders : shared_lock_holders_) {
+              aborted_transaction_ids_.emplace_back(shared_lock_holders);
+            }
+            shared_lock_holders_.clear();
+            exclusive_lock_holder_id_ = request.txn_id_;
+            request_queue_.pop_front();
+          }
+          break;  // no matter the exclusive lock is granted or not, the processing stops
+        }
+      }
+    }
+
+    txn_id_t GetSharedLockOldestTransactionId() const {
+      return shared_lock_holders_.empty() ? INVALID_TXN_ID : *shared_lock_holders_.begin();
+    }
+
+    std::vector<txn_id_t> GetAbortedTransactions() const { return aborted_transaction_ids_; }
   };
 
  public:
@@ -109,6 +212,8 @@ class LockManager {
 
   /** Lock table for lock requests. */
   std::unordered_map<RID, LockRequestQueue> lock_table_;
+  void AbortTransaction(Transaction *txn, AbortReason reason);
+  void WoundTransactions(const std::vector<txn_id_t> &transaction_ids);
 };
 
 }  // namespace bustub

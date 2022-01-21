@@ -66,8 +66,12 @@ class ExecutionEngine {
           result_set->emplace_back(tuple);
         }
       }
+    } catch (TransactionAbortException &e) {
+      txn_mgr_->Abort(txn);
+      return false;
     } catch (Exception &e) {
-      // TODO(student): handle exceptions
+      txn_mgr_->Abort(txn);
+      return false;
     }
 
     return true;

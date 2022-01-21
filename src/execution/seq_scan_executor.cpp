@@ -33,6 +33,29 @@ bool SeqScanExecutor::Next(Tuple *tuple, RID *rid) {
     return false;
   }
 
+  switch (exec_ctx_->GetTransaction()->GetIsolationLevel()) {
+    case IsolationLevel::READ_COMMITTED:
+      if (!exec_ctx_->GetTransaction()->IsSharedLocked(table_iter_->GetRid()) &&
+          !exec_ctx_->GetTransaction()->IsExclusiveLocked(table_iter_->GetRid()) &&
+          !(
+              // S lock
+              exec_ctx_->GetLockManager()->LockShared(exec_ctx_->GetTransaction(), table_iter_->GetRid()) &&
+              // but release immediately
+              exec_ctx_->GetLockManager()->Unlock(exec_ctx_->GetTransaction(), table_iter_->GetRid()))) {
+        return false;
+      }
+      break;
+    case IsolationLevel::REPEATABLE_READ:
+      if (!exec_ctx_->GetTransaction()->IsSharedLocked(table_iter_->GetRid()) &&
+          !exec_ctx_->GetTransaction()->IsExclusiveLocked(table_iter_->GetRid()) &&
+          !exec_ctx_->GetLockManager()->LockShared(exec_ctx_->GetTransaction(), table_iter_->GetRid())) {
+        return false;
+      }
+      break;
+    default:
+      break;
+  }
+
   std::vector<Value> values;
   for (auto &column : plan_->OutputSchema()->GetColumns()) {
     values.emplace_back(column.GetExpr()->Evaluate(&(*table_iter_), &table_info_->schema_));

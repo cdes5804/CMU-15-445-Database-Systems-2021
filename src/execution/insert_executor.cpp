@@ -50,10 +50,15 @@ bool InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) {
     return false;
   }
 
+  exec_ctx_->GetLockManager()->LockExclusive(exec_ctx_->GetTransaction(), tuple_to_insert_rid);
+
   for (const auto &index_info : table_indexes_) {
     auto &index = index_info->index_;
     Tuple key_tuple = tuple_to_insert.KeyFromTuple(table_info_->schema_, index_info->key_schema_, index->GetKeyAttrs());
     index->InsertEntry(key_tuple, tuple_to_insert_rid, exec_ctx_->GetTransaction());
+    exec_ctx_->GetTransaction()->GetIndexWriteSet()->emplace_back(tuple_to_insert_rid, table_info_->oid_, WType::INSERT,
+                                                                  tuple_to_insert, index_info->index_oid_,
+                                                                  exec_ctx_->GetCatalog());
   }
 
   return true;
