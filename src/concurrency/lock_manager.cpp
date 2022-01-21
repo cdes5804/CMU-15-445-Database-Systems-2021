@@ -56,6 +56,10 @@ bool LockManager::LockShared(Transaction *txn, const RID &rid) {
   }
 
   txn->GetSharedLockSet()->emplace(rid);
+
+  request_queue.aborted_transaction_ids_.clear();
+  request_queue.cv_.notify_all();
+
   return true;
 }
 
@@ -94,6 +98,10 @@ bool LockManager::LockExclusive(Transaction *txn, const RID &rid) {
   }
 
   txn->GetExclusiveLockSet()->emplace(rid);
+
+  request_queue.aborted_transaction_ids_.clear();
+  request_queue.cv_.notify_all();
+
   return true;
 }
 
@@ -139,6 +147,10 @@ bool LockManager::LockUpgrade(Transaction *txn, const RID &rid) {
 
   txn->GetSharedLockSet()->erase(rid);
   txn->GetExclusiveLockSet()->emplace(rid);
+
+  request_queue.aborted_transaction_ids_.clear();
+  request_queue.cv_.notify_all();
+
   return true;
 }
 

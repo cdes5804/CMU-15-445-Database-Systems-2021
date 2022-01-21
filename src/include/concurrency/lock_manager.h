@@ -14,9 +14,10 @@
 
 #include <algorithm>
 #include <condition_variable>  // NOLINT
-#include <list>
+#include <deque>
 #include <memory>
 #include <mutex>  // NOLINT
+#include <set>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
