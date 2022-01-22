@@ -38,16 +38,18 @@ bool DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) {
     return false;
   }
 
-  // lock on to-delete rid first
-  if (exec_ctx_->GetTransaction()->IsSharedLocked(tuple_to_delete_rid)) {
-    // upgrade S lock to X lock
-    if (!exec_ctx_->GetLockManager()->LockUpgrade(exec_ctx_->GetTransaction(), tuple_to_delete_rid)) {
-      return false;
+  auto txn = exec_ctx_->GetTransaction();
+  auto lock_manager = exec_ctx_->GetLockManager();
+  if (lock_manager != nullptr) {
+    if (txn->IsSharedLocked(tuple_to_delete_rid)) {
+      if (!lock_manager->LockUpgrade(txn, tuple_to_delete_rid)) {
+        return false;
+      }
+    } else if (!txn->IsExclusiveLocked(tuple_to_delete_rid)) {
+      if (!lock_manager->LockExclusive(txn, tuple_to_delete_rid)) {
+        return false;
+      }
     }
-  } else if (!exec_ctx_->GetTransaction()->IsExclusiveLocked(tuple_to_delete_rid) &&
-             // accquire X lock if not held
-             !exec_ctx_->GetLockManager()->LockExclusive(exec_ctx_->GetTransaction(), tuple_to_delete_rid)) {
-    return false;
   }
 
   if (!table_info_->table_->MarkDelete(tuple_to_delete_rid, transaction_)) {
@@ -59,9 +61,14 @@ bool DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) {
     Tuple old_key_tuple =
         tuple_to_delete.KeyFromTuple(table_info_->schema_, index_info->key_schema_, index->GetKeyAttrs());
     index->DeleteEntry(old_key_tuple, tuple_to_delete_rid, transaction_);
-    exec_ctx_->GetTransaction()->GetIndexWriteSet()->emplace_back(tuple_to_delete_rid, table_info_->oid_, WType::DELETE,
-                                                                  tuple_to_delete, index_info->index_oid_,
-                                                                  exec_ctx_->GetCatalog());
+    txn->GetIndexWriteSet()->emplace_back(tuple_to_delete_rid, table_info_->oid_, WType::DELETE, tuple_to_delete,
+                                          index_info->index_oid_, exec_ctx_->GetCatalog());
+  }
+
+  if (lock_manager != nullptr && txn->GetIsolationLevel() == IsolationLevel::READ_COMMITTED) {
+    if (!lock_manager->Unlock(txn, tuple_to_delete_rid)) {
+      return false;
+    }
   }
 
   return true;

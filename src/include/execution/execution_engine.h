@@ -74,6 +74,11 @@ class ExecutionEngine {
       return false;
     }
 
+    if (txn->GetState() == TransactionState::ABORTED) {
+      txn_mgr_->Abort(txn);
+      return false;
+    }
+
     return true;
   }
 

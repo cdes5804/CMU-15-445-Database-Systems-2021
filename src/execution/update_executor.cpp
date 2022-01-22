@@ -38,13 +38,18 @@ bool UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) {
 
   Tuple updated_tuple = GenerateUpdatedTuple(tuple_to_update);
 
-  if (exec_ctx_->GetTransaction()->IsSharedLocked(tuple_to_update_rid)) {
-    if (!exec_ctx_->GetLockManager()->LockUpgrade(exec_ctx_->GetTransaction(), tuple_to_update_rid)) {
-      return false;
+  auto txn = exec_ctx_->GetTransaction();
+  auto lock_manager = exec_ctx_->GetLockManager();
+  if (lock_manager != nullptr) {
+    if (txn->IsSharedLocked(tuple_to_update_rid)) {
+      if (!lock_manager->LockUpgrade(txn, tuple_to_update_rid)) {
+        return false;
+      }
+    } else if (!txn->IsExclusiveLocked(tuple_to_update_rid)) {
+      if (!lock_manager->LockExclusive(txn, tuple_to_update_rid)) {
+        return false;
+      }
     }
-  } else if (!exec_ctx_->GetTransaction()->IsExclusiveLocked(tuple_to_update_rid) &&
-             !exec_ctx_->GetLockManager()->LockExclusive(exec_ctx_->GetTransaction(), tuple_to_update_rid)) {
-    return false;
   }
 
   if (!table_info_->table_->UpdateTuple(updated_tuple, tuple_to_update_rid, exec_ctx_->GetTransaction())) {
@@ -63,6 +68,12 @@ bool UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) {
                                                index_info->index_oid_, exec_ctx_->GetCatalog());
     index_write_record.old_tuple_ = tuple_to_update;
     exec_ctx_->GetTransaction()->GetIndexWriteSet()->emplace_back(index_write_record);
+  }
+
+  if (lock_manager != nullptr && txn->GetIsolationLevel() == IsolationLevel::READ_COMMITTED) {
+    if (!lock_manager->Unlock(txn, tuple_to_update_rid)) {
+      return false;
+    }
   }
 
   return true;
