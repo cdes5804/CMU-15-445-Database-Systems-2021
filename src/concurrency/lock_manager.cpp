@@ -56,8 +56,6 @@ bool LockManager::LockShared(Transaction *txn, const RID &rid) {
   }
 
   txn->GetSharedLockSet()->emplace(rid);
-
-  request_queue.aborted_transaction_ids_.clear();
   request_queue.cv_.notify_all();
 
   return true;
@@ -98,8 +96,6 @@ bool LockManager::LockExclusive(Transaction *txn, const RID &rid) {
   }
 
   txn->GetExclusiveLockSet()->emplace(rid);
-
-  request_queue.aborted_transaction_ids_.clear();
   request_queue.cv_.notify_all();
 
   return true;
@@ -147,8 +143,6 @@ bool LockManager::LockUpgrade(Transaction *txn, const RID &rid) {
 
   txn->GetSharedLockSet()->erase(rid);
   txn->GetExclusiveLockSet()->emplace(rid);
-
-  request_queue.aborted_transaction_ids_.clear();
   request_queue.cv_.notify_all();
 
   return true;
@@ -245,6 +239,25 @@ void LockManager::RequestPreemptsYoungerRequestsInQueue(LockRequestQueue *reques
       queue_iter = request_queue->request_queue_.erase(queue_iter);
     } else {
       queue_iter++;
+    }
+  }
+}
+
+void LockManager::ProcessQueue(LockRequestQueue *request_queue) {
+  auto queue_iter = request_queue->request_queue_.begin();
+  while (queue_iter != request_queue->request_queue_.end()) {
+    if (queue_iter->lock_mode_ == LockMode::SHARED) {
+      request_queue->shared_lock_holders_.insert(queue_iter->txn_id_);
+      queue_iter = request_queue->request_queue_.erase(queue_iter);
+    } else {
+      if (request_queue->shared_lock_holders_.empty()) {
+        request_queue->exclusive_lock_holder_id_ = queue_iter->txn_id_;
+        if (queue_iter->txn_id_ == request_queue->upgrading_) {
+          request_queue->upgrading_ = INVALID_TXN_ID;
+        }
+        request_queue->request_queue_.erase(queue_iter);
+        break;
+      }
     }
   }
 }
