@@ -19,57 +19,90 @@
 
 namespace bustub {
 
-void LockManager::AbortTransaction(Transaction *txn, const AbortReason reason) {
-  txn->SetState(TransactionState::ABORTED);
-  throw TransactionAbortException(txn->GetTransactionId(), reason);
-}
-
-void LockManager::WoundTransactions(const std::vector<txn_id_t> &transaction_ids) {
-  for (txn_id_t transaction_id : transaction_ids) {
-    auto txn = TransactionManager::GetTransaction(transaction_id);
-    txn->SetState(TransactionState::ABORTED);
-  }
-}
+void LockManager::AbortCurrentTransaction(Transaction *txn) { txn->SetState(TransactionState::ABORTED); }
 
 bool LockManager::LockShared(Transaction *txn, const RID &rid) {
+  if (txn->GetState() == TransactionState::ABORTED) {
+    return false;
+  }
   if (txn->GetIsolationLevel() == IsolationLevel::REPEATABLE_READ && txn->GetState() == TransactionState::SHRINKING) {
-    AbortTransaction(txn, AbortReason::LOCK_ON_SHRINKING);
+    AbortCurrentTransaction(txn);
+    return false;
   }
   if (txn->GetIsolationLevel() == IsolationLevel::READ_UNCOMMITTED) {
-    AbortTransaction(txn, AbortReason::LOCKSHARED_ON_READ_UNCOMMITTED);
+    AbortCurrentTransaction(txn);
+    return false;
   }
   if (txn->IsSharedLocked(rid) || txn->IsExclusiveLocked(rid)) {
     return true;
   }
 
-  latch_.lock();
+  std::unique_lock manager_lock(latch_);
   LockRequestQueue &request_queue = lock_table_[rid];
-  latch_.unlock();
 
-  std::unique_lock queue_lock(request_queue.queue_latch_);
-  request_queue.SubmitLockRequest(txn, LockMode::SHARED);
+  bool should_wait = false;
+  auto queue_iter = request_queue.request_queue_.begin();
+  while (queue_iter != request_queue.request_queue_.end()) {
+    if (txn->GetTransactionId() < queue_iter->txn_id_ && queue_iter->lock_mode_ == LockMode::EXCLUSIVE) {
+      Transaction *queued_transaction = TransactionManager::GetTransaction(queue_iter->txn_id_);
+      queued_transaction->SetState(TransactionState::ABORTED);
+      queue_iter = request_queue.request_queue_.erase(queue_iter);
+    } else {
+      if (queue_iter->lock_mode_ == LockMode::EXCLUSIVE) {
+        should_wait = true;
+      }
+      queue_iter++;
+    }
+  }
 
-  while (txn->GetState() != TransactionState::ABORTED && !request_queue.IsLockGranted(txn->GetTransactionId())) {
-    request_queue.cv_.wait(queue_lock);
+  if (request_queue.upgrading_ != INVALID_TXN_ID) {
+    if (txn->GetTransactionId() < request_queue.upgrading_) {
+      Transaction *upgrading_transaction = TransactionManager::GetTransaction(request_queue.upgrading_);
+      upgrading_transaction->SetState(TransactionState::ABORTED);
+      request_queue.upgrading_ = INVALID_TXN_ID;
+    } else {
+      should_wait = true;
+    }
+  }
+
+  if (request_queue.exclusive_lock_holder_id_ != INVALID_TXN_ID) {
+    if (txn->GetTransactionId() < request_queue.exclusive_lock_holder_id_) {
+      Transaction *exclusive_lock_holder_transaction =
+          TransactionManager::GetTransaction(request_queue.exclusive_lock_holder_id_);
+      exclusive_lock_holder_transaction->SetState(TransactionState::ABORTED);
+      request_queue.exclusive_lock_holder_id_ = INVALID_TXN_ID;
+    } else {
+      should_wait = true;
+    }
+  }
+
+  if (should_wait) {
+    request_queue.request_queue_.emplace_back(txn->GetTransactionId(), LockMode::SHARED);
+    while (txn->GetState() != TransactionState::ABORTED && !request_queue.IsLockGranted(txn->GetTransactionId())) {
+      request_queue.cv_.wait(manager_lock);
+    }
+  } else {
+    request_queue.shared_lock_holders_.insert(txn->GetTransactionId());
   }
 
   if (txn->GetState() == TransactionState::ABORTED) {
-    AbortTransaction(txn, AbortReason::DEADLOCK);
+    AbortCurrentTransaction(txn);
     return false;
   }
 
-  WoundTransactions(request_queue.GetAbortedTransactions());
   txn->GetSharedLockSet()->emplace(rid);
-
-  request_queue.aborted_transaction_ids_.clear();
   request_queue.cv_.notify_all();
 
   return true;
 }
 
 bool LockManager::LockExclusive(Transaction *txn, const RID &rid) {
+  if (txn->GetState() == TransactionState::ABORTED) {
+    return false;
+  }
   if (txn->GetState() == TransactionState::SHRINKING) {
-    AbortTransaction(txn, AbortReason::LOCK_ON_SHRINKING);
+    AbortCurrentTransaction(txn);
+    return false;
   }
   if (txn->IsExclusiveLocked(rid)) {
     return true;
@@ -78,34 +111,84 @@ bool LockManager::LockExclusive(Transaction *txn, const RID &rid) {
     return LockUpgrade(txn, rid);
   }
 
-  latch_.lock();
+  std::unique_lock manager_lock(latch_);
   LockRequestQueue &request_queue = lock_table_[rid];
-  latch_.unlock();
 
-  std::unique_lock queue_lock(request_queue.queue_latch_);
-  request_queue.SubmitLockRequest(txn, LockMode::EXCLUSIVE);
+  bool should_wait = false;
+  auto queue_iter = request_queue.request_queue_.begin();
+  while (queue_iter != request_queue.request_queue_.end()) {
+    if (txn->GetTransactionId() < queue_iter->txn_id_) {
+      Transaction *queued_transaction = TransactionManager::GetTransaction(queue_iter->txn_id_);
+      queued_transaction->SetState(TransactionState::ABORTED);
+      queue_iter = request_queue.request_queue_.erase(queue_iter);
+    } else {
+      if (queue_iter->lock_mode_ == LockMode::EXCLUSIVE) {
+        should_wait = true;
+      }
+      queue_iter++;
+    }
+  }
 
-  while (txn->GetState() != TransactionState::ABORTED && !request_queue.IsLockGranted(txn->GetTransactionId())) {
-    request_queue.cv_.wait(queue_lock);
+  if (request_queue.upgrading_ != INVALID_TXN_ID) {
+    if (txn->GetTransactionId() < request_queue.upgrading_) {
+      Transaction *upgrading_transaction = TransactionManager::GetTransaction(request_queue.upgrading_);
+      upgrading_transaction->SetState(TransactionState::ABORTED);
+      request_queue.upgrading_ = INVALID_TXN_ID;
+    } else {
+      should_wait = true;
+    }
+  }
+
+  if (request_queue.exclusive_lock_holder_id_ != INVALID_TXN_ID) {
+    if (txn->GetTransactionId() < request_queue.exclusive_lock_holder_id_) {
+      Transaction *exclusive_lock_holder_transaction =
+          TransactionManager::GetTransaction(request_queue.exclusive_lock_holder_id_);
+      exclusive_lock_holder_transaction->SetState(TransactionState::ABORTED);
+      request_queue.exclusive_lock_holder_id_ = INVALID_TXN_ID;
+    } else {
+      should_wait = true;
+    }
+  }
+
+  auto shared_lock_iter = request_queue.shared_lock_holders_.begin();
+  while (shared_lock_iter != request_queue.shared_lock_holders_.end()) {
+    if (txn->GetTransactionId() < *shared_lock_iter) {
+      Transaction *shared_lock_holder_transaction = TransactionManager::GetTransaction(*shared_lock_iter);
+      shared_lock_holder_transaction->SetState(TransactionState::ABORTED);
+      shared_lock_iter = request_queue.shared_lock_holders_.erase(shared_lock_iter);
+    } else {
+      should_wait = true;
+      shared_lock_iter++;
+    }
+  }
+
+  if (should_wait) {
+    request_queue.request_queue_.emplace_back(txn->GetTransactionId(), LockMode::EXCLUSIVE);
+    while (txn->GetState() != TransactionState::ABORTED && !request_queue.IsLockGranted(txn->GetTransactionId())) {
+      request_queue.cv_.wait(manager_lock);
+    }
+  } else {
+    request_queue.exclusive_lock_holder_id_ = txn->GetTransactionId();
   }
 
   if (txn->GetState() == TransactionState::ABORTED) {
-    AbortTransaction(txn, AbortReason::DEADLOCK);
+    AbortCurrentTransaction(txn);
     return false;
   }
 
-  WoundTransactions(request_queue.GetAbortedTransactions());
   txn->GetExclusiveLockSet()->emplace(rid);
-
-  request_queue.aborted_transaction_ids_.clear();
   request_queue.cv_.notify_all();
 
   return true;
 }
 
 bool LockManager::LockUpgrade(Transaction *txn, const RID &rid) {
+  if (txn->GetState() == TransactionState::ABORTED) {
+    return false;
+  }
   if (txn->GetState() == TransactionState::SHRINKING) {
-    AbortTransaction(txn, AbortReason::LOCK_ON_SHRINKING);
+    AbortCurrentTransaction(txn);
+    return false;
   }
   if (txn->IsExclusiveLocked(rid)) {
     return true;
@@ -114,53 +197,118 @@ bool LockManager::LockUpgrade(Transaction *txn, const RID &rid) {
     return false;
   }
 
-  latch_.lock();
+  std::unique_lock manager_lock(latch_);
   LockRequestQueue &request_queue = lock_table_[rid];
-  latch_.unlock();
 
-  std::unique_lock queue_lock(request_queue.queue_latch_);
-  if (!request_queue.SubmitUpgradeRequest(txn)) {
-    AbortTransaction(txn, AbortReason::UPGRADE_CONFLICT);
-  }
-
-  while (txn->GetState() != TransactionState::ABORTED && !request_queue.IsLockGranted(txn->GetTransactionId())) {
-    request_queue.cv_.wait(queue_lock);
-  }
-
-  if (txn->GetState() == TransactionState::ABORTED) {
-    AbortTransaction(txn, AbortReason::DEADLOCK);
+  if (request_queue.upgrading_ != INVALID_TXN_ID) {
+    AbortCurrentTransaction(txn);
     return false;
   }
 
-  WoundTransactions(request_queue.GetAbortedTransactions());
+  request_queue.shared_lock_holders_.erase(txn->GetTransactionId());
+
+  bool should_wait = false;
+  auto queue_iter = request_queue.request_queue_.begin();
+  while (queue_iter != request_queue.request_queue_.end()) {
+    if (txn->GetTransactionId() < queue_iter->txn_id_) {
+      Transaction *queued_transaction = TransactionManager::GetTransaction(queue_iter->txn_id_);
+      queued_transaction->SetState(TransactionState::ABORTED);
+      queue_iter = request_queue.request_queue_.erase(queue_iter);
+    } else {
+      if (queue_iter->lock_mode_ == LockMode::EXCLUSIVE) {
+        should_wait = true;
+      }
+      queue_iter++;
+    }
+  }
+
+  if (request_queue.exclusive_lock_holder_id_ != INVALID_TXN_ID) {
+    if (txn->GetTransactionId() < request_queue.exclusive_lock_holder_id_) {
+      Transaction *exclusive_lock_holder_transaction =
+          TransactionManager::GetTransaction(request_queue.exclusive_lock_holder_id_);
+      exclusive_lock_holder_transaction->SetState(TransactionState::ABORTED);
+      request_queue.exclusive_lock_holder_id_ = INVALID_TXN_ID;
+    } else {
+      should_wait = true;
+    }
+  }
+
+  auto shared_lock_iter = request_queue.shared_lock_holders_.begin();
+  while (shared_lock_iter != request_queue.shared_lock_holders_.end()) {
+    if (txn->GetTransactionId() < *shared_lock_iter) {
+      Transaction *shared_lock_holder_transaction = TransactionManager::GetTransaction(*shared_lock_iter);
+      shared_lock_holder_transaction->SetState(TransactionState::ABORTED);
+      shared_lock_iter = request_queue.shared_lock_holders_.erase(shared_lock_iter);
+    } else {
+      should_wait = true;
+      shared_lock_iter++;
+    }
+  }
+
+  if (should_wait) {
+    request_queue.upgrading_ = txn->GetTransactionId();
+    request_queue.request_queue_.emplace_back(txn->GetTransactionId(), LockMode::EXCLUSIVE);
+    while (txn->GetState() != TransactionState::ABORTED && !request_queue.IsLockGranted(txn->GetTransactionId())) {
+      request_queue.cv_.wait(manager_lock);
+    }
+  } else {
+    request_queue.exclusive_lock_holder_id_ = txn->GetTransactionId();
+  }
+
+  if (txn->GetState() == TransactionState::ABORTED) {
+    AbortCurrentTransaction(txn);
+    return false;
+  }
+
   txn->GetSharedLockSet()->erase(rid);
   txn->GetExclusiveLockSet()->emplace(rid);
-
-  request_queue.aborted_transaction_ids_.clear();
   request_queue.cv_.notify_all();
 
   return true;
 }
 
 bool LockManager::Unlock(Transaction *txn, const RID &rid) {
-  latch_.lock();
+  std::unique_lock manager_lock(latch_);
   LockRequestQueue &request_queue = lock_table_[rid];
-  latch_.unlock();
 
-  std::unique_lock queue_lock(request_queue.queue_latch_);
   if (txn->GetIsolationLevel() == IsolationLevel::REPEATABLE_READ && txn->GetState() == TransactionState::GROWING) {
     txn->SetState(TransactionState::SHRINKING);
   }
-  request_queue.Unlock(txn->GetTransactionId());
 
-  WoundTransactions(request_queue.GetAbortedTransactions());
+  if (request_queue.exclusive_lock_holder_id_ == txn->GetTransactionId()) {
+    request_queue.exclusive_lock_holder_id_ = INVALID_TXN_ID;
+  }
+  if (auto shared_lock_iter = request_queue.shared_lock_holders_.find(txn->GetTransactionId());
+      shared_lock_iter != request_queue.shared_lock_holders_.end()) {
+    request_queue.shared_lock_holders_.erase(shared_lock_iter);
+  }
+
   txn->GetSharedLockSet()->erase(rid);
   txn->GetExclusiveLockSet()->erase(rid);
 
-  request_queue.aborted_transaction_ids_.clear();
+  ProcessQueue(&request_queue);
   request_queue.cv_.notify_all();
 
   return true;
+}
+
+void LockManager::ProcessQueue(LockRequestQueue *request_queue) {
+  auto queue_iter = request_queue->request_queue_.begin();
+  while (queue_iter != request_queue->request_queue_.end()) {
+    if (queue_iter->lock_mode_ == LockMode::SHARED) {
+      request_queue->shared_lock_holders_.insert(queue_iter->txn_id_);
+      queue_iter = request_queue->request_queue_.erase(queue_iter);
+    } else {
+      if (request_queue->shared_lock_holders_.empty()) {
+        request_queue->exclusive_lock_holder_id_ = queue_iter->txn_id_;
+        if (queue_iter->txn_id_ == request_queue->upgrading_) {
+          request_queue->upgrading_ = INVALID_TXN_ID;
+        }
+        request_queue->request_queue_.erase(queue_iter);
+        break;
+      }
+    }
+  }
 }
 
 }  // namespace bustub
