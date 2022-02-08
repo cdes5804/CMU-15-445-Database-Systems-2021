@@ -118,6 +118,7 @@ class LockManager {
   std::unordered_map<RID, LockRequestQueue> lock_table_;
   void AbortCurrentTransaction(Transaction *txn);
   void ProcessQueue(LockRequestQueue *request_queue);
+  void ExclusiveLockPreemptsSharedLock(LockRequestQueue *request_queue, txn_id_t exclusive_lock_requester_id);
 };
 
 }  // namespace bustub
