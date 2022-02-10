@@ -25,7 +25,7 @@ bool LockManager::LockShared(Transaction *txn, const RID &rid) {
   if (txn->GetState() == TransactionState::ABORTED) {
     return false;
   }
-  if (txn->GetState() == TransactionState::SHRINKING) {
+  if (txn->GetIsolationLevel() == IsolationLevel::REPEATABLE_READ && txn->GetState() == TransactionState::SHRINKING) {
     AbortCurrentTransaction(txn);
     return false;
   }
@@ -33,7 +33,7 @@ bool LockManager::LockShared(Transaction *txn, const RID &rid) {
     AbortCurrentTransaction(txn);
     return false;
   }
-  if (txn->IsSharedLocked(rid)) {
+  if (txn->IsSharedLocked(rid) || txn->IsExclusiveLocked(rid)) {
     return true;
   }
 
@@ -43,12 +43,7 @@ bool LockManager::LockShared(Transaction *txn, const RID &rid) {
   RequestPreemptsYoungerRequestsInQueue(&request_queue, txn->GetTransactionId(), LockMode::SHARED);
   RequestPreemptsYoungerExclusiveLock(&request_queue, txn->GetTransactionId());
 
-  request_queue.request_queue_.emplace_back(txn->GetTransactionId(), LockMode::SHARED);
-  ProcessQueue(&request_queue);
-  request_queue.cv_.notify_all();
-  while (txn->GetState() != TransactionState::ABORTED && !request_queue.IsLockGranted(txn->GetTransactionId())) {
-    request_queue.cv_.wait(manager_lock);
-  }
+  request_queue.shared_lock_holders_.insert(txn->GetTransactionId());
 
   if (txn->GetState() == TransactionState::ABORTED) {
     AbortCurrentTransaction(txn);
@@ -56,6 +51,8 @@ bool LockManager::LockShared(Transaction *txn, const RID &rid) {
   }
 
   txn->GetSharedLockSet()->emplace(rid);
+  request_queue.cv_.notify_all();
+
   return true;
 }
 
@@ -71,7 +68,7 @@ bool LockManager::LockExclusive(Transaction *txn, const RID &rid) {
     return true;
   }
   if (txn->IsSharedLocked(rid)) {
-    return false;
+    return LockUpgrade(txn, rid);
   }
 
   std::unique_lock manager_lock(latch_);
@@ -81,11 +78,14 @@ bool LockManager::LockExclusive(Transaction *txn, const RID &rid) {
   RequestPreemptsYoungerExclusiveLock(&request_queue, txn->GetTransactionId());
   ExclusiveRequestPreemptsYoungerSharedLock(&request_queue, txn->GetTransactionId());
 
-  request_queue.request_queue_.emplace_back(txn->GetTransactionId(), LockMode::EXCLUSIVE);
-  ProcessQueue(&request_queue);
-  request_queue.cv_.notify_all();
-  while (txn->GetState() != TransactionState::ABORTED && !request_queue.IsLockGranted(txn->GetTransactionId())) {
-    request_queue.cv_.wait(manager_lock);
+  if (!request_queue.request_queue_.empty() || !request_queue.shared_lock_holders_.empty() ||
+      request_queue.exclusive_lock_holder_id_ != INVALID_TXN_ID) {
+    request_queue.request_queue_.emplace_back(txn->GetTransactionId(), LockMode::EXCLUSIVE);
+    while (txn->GetState() != TransactionState::ABORTED && !request_queue.IsLockGranted(txn->GetTransactionId())) {
+      request_queue.cv_.wait(manager_lock);
+    }
+  } else {
+    request_queue.exclusive_lock_holder_id_ = txn->GetTransactionId();
   }
 
   if (txn->GetState() == TransactionState::ABORTED) {
@@ -94,6 +94,8 @@ bool LockManager::LockExclusive(Transaction *txn, const RID &rid) {
   }
 
   txn->GetExclusiveLockSet()->emplace(rid);
+  request_queue.cv_.notify_all();
+
   return true;
 }
 
@@ -124,12 +126,15 @@ bool LockManager::LockUpgrade(Transaction *txn, const RID &rid) {
   RequestPreemptsYoungerExclusiveLock(&request_queue, txn->GetTransactionId());
   ExclusiveRequestPreemptsYoungerSharedLock(&request_queue, txn->GetTransactionId());
 
-  request_queue.request_queue_.emplace_back(txn->GetTransactionId(), LockMode::EXCLUSIVE);
-  request_queue.upgrading_ = txn->GetTransactionId();
-  ProcessQueue(&request_queue);
-  request_queue.cv_.notify_all();
-  while (txn->GetState() != TransactionState::ABORTED && !request_queue.IsLockGranted(txn->GetTransactionId())) {
-    request_queue.cv_.wait(manager_lock);
+  if (request_queue.exclusive_lock_holder_id_ == INVALID_TXN_ID && request_queue.shared_lock_holders_.empty()) {
+    request_queue.exclusive_lock_holder_id_ = txn->GetTransactionId();
+  } else {
+    request_queue.request_queue_.emplace_back(txn->GetTransactionId(), LockMode::EXCLUSIVE);
+    request_queue.upgrading_ = txn->GetTransactionId();
+    ProcessQueue(&request_queue);
+    while (txn->GetState() != TransactionState::ABORTED && !request_queue.IsLockGranted(txn->GetTransactionId())) {
+      request_queue.cv_.wait(manager_lock);
+    }
   }
 
   if (txn->GetState() == TransactionState::ABORTED) {
@@ -139,6 +144,8 @@ bool LockManager::LockUpgrade(Transaction *txn, const RID &rid) {
 
   txn->GetSharedLockSet()->erase(rid);
   txn->GetExclusiveLockSet()->emplace(rid);
+  request_queue.cv_.notify_all();
+
   return true;
 }
 
@@ -178,8 +185,6 @@ void LockManager::ProcessQueue(LockRequestQueue *request_queue) {
       if (request_queue->exclusive_lock_holder_id_ == INVALID_TXN_ID) {
         request_queue->shared_lock_holders_.insert(queue_iter->txn_id_);
         queue_iter = request_queue->request_queue_.erase(queue_iter);
-      } else {
-        break;
       }
     } else {
       if (request_queue->shared_lock_holders_.empty()) {
