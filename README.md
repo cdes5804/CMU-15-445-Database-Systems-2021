@@ -21,4 +21,4 @@ Gradescope entry code for non-CMU students: **4PR8G5**
 
 * [x] Project #3: [Query Execution](https://15445.courses.cs.cmu.edu/fall2021/project3/)
 
-* [ ] Project #4: [Concurrency Control](https://15445.courses.cs.cmu.edu/fall2021/project4/)
+* [x] Project #4: [Concurrency Control](https://15445.courses.cs.cmu.edu/fall2021/project4/)
