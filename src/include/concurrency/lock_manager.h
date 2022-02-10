@@ -18,6 +18,7 @@
 #include <memory>
 #include <mutex>  // NOLINT
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -37,20 +38,26 @@ class LockManager {
 
   class LockRequest {
    public:
-    LockRequest(txn_id_t txn_id, LockMode lock_mode) : txn_id_(txn_id), lock_mode_(lock_mode), granted_(false) {}
+    LockRequest(txn_id_t txn_id, LockMode lock_mode) : txn_id_(txn_id), lock_mode_(lock_mode) {}
 
     txn_id_t txn_id_;
     LockMode lock_mode_;
-    bool granted_;
   };
 
   class LockRequestQueue {
    public:
+    std::unordered_set<txn_id_t> shared_lock_holders_;
+    // txn_id of the tranaction holding the exclusive lock
+    txn_id_t exclusive_lock_holder_id_ = INVALID_TXN_ID;
     std::list<LockRequest> request_queue_;
     // for notifying blocked transactions on this rid
     std::condition_variable cv_;
     // txn_id of an upgrading transaction (if any)
     txn_id_t upgrading_ = INVALID_TXN_ID;
+
+    bool IsLockGranted(txn_id_t txn_id) const {
+      return shared_lock_holders_.find(txn_id) != shared_lock_holders_.end() || exclusive_lock_holder_id_ == txn_id;
+    }
   };
 
  public:
@@ -109,6 +116,12 @@ class LockManager {
 
   /** Lock table for lock requests. */
   std::unordered_map<RID, LockRequestQueue> lock_table_;
+  void AbortCurrentTransaction(Transaction *txn);
+  void ProcessQueue(LockRequestQueue *request_queue);
+  void ExclusiveRequestPreemptsYoungerSharedLock(LockRequestQueue *request_queue, txn_id_t exclusive_lock_requester_id);
+  void RequestPreemptsYoungerExclusiveLock(LockRequestQueue *request_queue, txn_id_t lock_requester_id);
+  void RequestPreemptsYoungerRequestsInQueue(LockRequestQueue *request_queue, txn_id_t lock_requester_id,
+                                             LockMode lock_mode);
 };
 
 }  // namespace bustub

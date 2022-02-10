@@ -46,14 +46,38 @@ bool InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) {
     }
   }
 
-  if (!table_info_->table_->InsertTuple(tuple_to_insert, &tuple_to_insert_rid, exec_ctx_->GetTransaction())) {
+  auto txn = exec_ctx_->GetTransaction();
+  auto lock_manager = exec_ctx_->GetLockManager();
+
+  if (!table_info_->table_->InsertTuple(tuple_to_insert, &tuple_to_insert_rid, txn)) {
     return false;
+  }
+
+  if (lock_manager != nullptr) {
+    if (txn->IsSharedLocked(tuple_to_insert_rid)) {
+      if (!lock_manager->LockUpgrade(txn, tuple_to_insert_rid)) {
+        return false;
+      }
+    } else if (!txn->IsExclusiveLocked(tuple_to_insert_rid)) {
+      if (!lock_manager->LockExclusive(txn, tuple_to_insert_rid)) {
+        return false;
+      }
+    }
   }
 
   for (const auto &index_info : table_indexes_) {
     auto &index = index_info->index_;
     Tuple key_tuple = tuple_to_insert.KeyFromTuple(table_info_->schema_, index_info->key_schema_, index->GetKeyAttrs());
     index->InsertEntry(key_tuple, tuple_to_insert_rid, exec_ctx_->GetTransaction());
+    exec_ctx_->GetTransaction()->GetIndexWriteSet()->emplace_back(tuple_to_insert_rid, table_info_->oid_, WType::INSERT,
+                                                                  tuple_to_insert, index_info->index_oid_,
+                                                                  exec_ctx_->GetCatalog());
+  }
+
+  if (lock_manager != nullptr && txn->GetIsolationLevel() == IsolationLevel::READ_COMMITTED) {
+    if (!lock_manager->Unlock(txn, tuple_to_insert_rid)) {
+      return false;
+    }
   }
 
   return true;
